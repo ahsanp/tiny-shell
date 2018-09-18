@@ -188,18 +188,19 @@ void eval(char *cmdline)
             execve(argv[0], argv, environ);
         }
         Sigprocmask(SIG_BLOCK, &mask_all, NULL); // block all signals
-        addjob(jobs, pid, 2 - bg_flag, cmdline);
-        Sigprocmask(SIG_SETMASK, &prev_mask, NULL); // reset all signals
-        if (!bg_flag) {
-            // wait for foreground process to complete
-            waitfg(pid);
-        } else {
+        addjob(jobs, pid, bg_flag + 1, cmdline);
+        if (bg_flag) {
             char *buf = (char *) malloc(MAXLINE + 10);
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
             ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
             if (written_bytes < 0) {
                 unix_error("Could not write to stdout");
             }
+        }
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL); // reset all signals
+        if (!bg_flag) {
+            // wait for foreground process to complete
+            waitfg(pid);
         }
     }
 }
@@ -269,6 +270,9 @@ int builtin_cmd(char **argv)
 {
     if (!strcmp(argv[0], "quit")) {
         exit(0);
+    } else if (!strcmp(argv[0], "jobs")) {
+        listjobs(jobs);
+        return 1;
     }
     return 0;
 }
@@ -286,9 +290,7 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    while (pid2jid(pid)) {
-        sleep(1);
-    }
+    while (pid2jid(pid) && pid == fgpid(jobs));
 }
 
 /*****************
