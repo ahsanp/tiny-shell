@@ -59,6 +59,7 @@ void eval(char *cmdline);
 int builtin_cmd(char **argv);
 void do_bgfg(char **argv);
 void waitfg(pid_t pid);
+
 pid_t Fork();
 void Sigfillset(sigset_t *mask);
 void Sigemptyset(sigset_t *mask);
@@ -182,7 +183,6 @@ void eval(char *cmdline)
         if ((pid = Fork()) == 0) {
             // Run in the child process
             // reset all masks in child process
-            // signal masks survive execve
             setpgid(0, 0);
             Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             execve(argv[0], argv, environ);
@@ -310,8 +310,8 @@ void sigchld_handler(int sig)
         deletejob(jobs, pid);
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
-    if (errno == ECHILD) {
-        unix_error("Error on waitpid in sigchld_handler");
+    if (errno != ECHILD) {
+        unix_error("waitpid error");
     }
     errno = prev_error;
 }
