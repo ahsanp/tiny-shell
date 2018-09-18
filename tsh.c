@@ -178,17 +178,18 @@ void eval(char *cmdline)
     Sigaddset(&mask_sigchld, SIGCHLD);
     bg_flag = parseline(cmdline, argv);
     if (!builtin_cmd(argv)) {
-        Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask);
+        Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask); // block SIGCHLD
         if ((pid = Fork()) == 0) {
             // Run in the child process
             // reset all masks in child process
             // signal masks survive execve
+            setpgid(0, 0);
             Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             execve(argv[0], argv, environ);
         }
-        Sigprocmask(SIG_BLOCK, &mask_all, NULL);
+        Sigprocmask(SIG_BLOCK, &mask_all, NULL); // block all signals
         addjob(jobs, pid, 2 - bg_flag, cmdline);
-        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL); // reset all signals
         if (bg_flag) {
             char *buf = (char *) malloc(MAXLINE + 10);
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
