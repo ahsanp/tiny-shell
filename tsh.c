@@ -193,8 +193,7 @@ void eval(char *cmdline)
         if (!bg_flag) {
             // wait for foreground process to complete
             waitfg(pid);
-        }
-        if (bg_flag) {
+        } else {
             char *buf = (char *) malloc(MAXLINE + 10);
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
             ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
