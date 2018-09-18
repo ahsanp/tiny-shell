@@ -195,7 +195,6 @@ void eval(char *cmdline)
             ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
             if (written_bytes < 0) {
                 unix_error("Could not write to stdout");
-                exit(1);
             }
         }
     }
@@ -563,7 +562,6 @@ pid_t Fork() {
     pid_t pid;
     if ((pid = fork()) < 0) {
         unix_error("Could not fork child process");
-        exit(1);
     }
     return pid;
 }
@@ -574,7 +572,6 @@ pid_t Fork() {
 void Sigfillset(sigset_t *mask) {
     if (sigfillset(mask) < 0) {
         unix_error("Could not fill mask");
-        exit(1);
     }
 }
 
@@ -584,7 +581,6 @@ void Sigfillset(sigset_t *mask) {
 void Sigemptyset(sigset_t *mask) {
     if (sigemptyset(mask) < 0) {
         unix_error("Could not empty mask");
-        exit(1);
     }
 }
 
@@ -594,7 +590,6 @@ void Sigemptyset(sigset_t *mask) {
 void Sigaddset(sigset_t *mask, int signo) {
     if (sigaddset(mask, signo) < 0) {
         unix_error("Could not add to set");
-        exit(1);
     }
 }
 
@@ -604,6 +599,5 @@ void Sigaddset(sigset_t *mask, int signo) {
 void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask) {
     if (sigprocmask(action, mask, prev_mask) < 0) {
         unix_error("Could not perform action on mask");
-        exit(1);
     }
 }
