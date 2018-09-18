@@ -178,10 +178,7 @@ void eval(char *cmdline)
     Sigaddset(&mask_sigchld, SIGCHLD);
     bg_flag = parseline(cmdline, argv);
     if (!builtin_cmd(argv)) {
-        if (sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask) < 0) {
-            unix_error("Could not block SIGCHLD");
-            exit(0);
-        }
+        Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask);
         if ((pid = Fork()) == 0) {
             // Run in the child process
             // reset all masks in child process
@@ -302,7 +299,21 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig)
 {
-    return;
+    int prev_error = errno;
+    sigset_t mask_all, prev_mask;
+    Sigfillset(&mask_all);
+    // reap all zombies
+    pid_t pid;
+    int status;
+    while ((pid = waitpid(-1, &status, 0)) > 0) {
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+        deletejob(jobs, pid);
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    }
+    if (errno == ECHILD) {
+        unix_error("Error on waitpid in sigchld_handler");
+    }
+    errno = prev_error;
 }
 
 /*
