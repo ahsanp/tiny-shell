@@ -190,6 +190,10 @@ void eval(char *cmdline)
         Sigprocmask(SIG_BLOCK, &mask_all, NULL); // block all signals
         addjob(jobs, pid, 2 - bg_flag, cmdline);
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL); // reset all signals
+        if (!bg_flag) {
+            // wait for foreground process to complete
+            waitfg(pid);
+        }
         if (bg_flag) {
             char *buf = (char *) malloc(MAXLINE + 10);
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
@@ -283,7 +287,9 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    return;
+    while (pid2jid(pid)) {
+        sleep(1);
+    }
 }
 
 /*****************
