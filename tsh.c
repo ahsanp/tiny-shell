@@ -164,7 +164,52 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline)
 {
-    return;
+    sigset_t mask_sigchld, mask_all, prev_mask;
+    if (sigfillset(&mask_all) < 0) {
+        unix_error("Could not set all mask");
+        exit(0);
+    }
+    if (sigemptyset(&mask_sigchld) < 0) {
+        unix_error("Could not empty mask");
+        exit(0);
+    }
+    if (sigaddset(&mask_sigchld, SIGCHLD) < 0) {
+        unix_error("Could not mask for SIGCHLD");
+        exit(0);
+    }
+    char **argv = (char **) malloc(sizeof(char *) * MAXARGS);
+    int bg_flag;
+    pid_t pid;
+    bg_flag = parseline(cmdline, argv);
+    if (!builtin_cmd(argv)) {
+        if (sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask) < 0) {
+            unix_error("Could not block SIGCHLD");
+            exit(0);
+        }
+        pid = fork();
+        if (pid < 0) {
+            unix_error("Could not fork child");
+            exit(0);
+        }
+        if (pid != 0) {
+            // Run in the child process
+            // reset all masks
+            if (sigprocmask(SIG_SETMASK, &prev_mask, NULL) < 0) {
+                unix_error("Could not reset mask");
+                exit(0);
+            }
+            execve(argv[0], argv, environ);
+        }
+        if (sigprocmask(SIG_BLOCK, &mask_all, NULL) < 0) {
+            unix_error("Could not block all signals");
+            exit(0);
+        }
+        addjob(jobs, pid, 2 - bg_flag, cmdline);
+        if (sigprocmask(SIG_SETMASK, &prev_mask, NULL) < 0) {
+            unix_error("Could not reset signals mask");
+            exit(0);
+        }
+    }
 }
 
 /*
