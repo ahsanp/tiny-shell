@@ -182,20 +182,25 @@ void eval(char *cmdline)
             unix_error("Could not block SIGCHLD");
             exit(0);
         }
-        pid = fork();
-        if (pid < 0) {
-            unix_error("Could not fork child");
-            exit(0);
-        }
-        if (pid != 0) {
+        if ((pid = Fork()) == 0) {
             // Run in the child process
-            // reset all masks
+            // reset all masks in child process
+            // signal masks survive execve
             Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             execve(argv[0], argv, environ);
         }
         Sigprocmask(SIG_BLOCK, &mask_all, NULL);
         addjob(jobs, pid, 2 - bg_flag, cmdline);
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        if (bg_flag) {
+            char *buf = (char *) malloc(MAXLINE + 10);
+            sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
+            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
+            if (written_bytes < 0) {
+                unix_error("Could not write to stdout");
+                exit(1);
+            }
+        }
     }
 }
 
