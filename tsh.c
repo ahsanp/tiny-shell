@@ -59,6 +59,11 @@ void eval(char *cmdline);
 int builtin_cmd(char **argv);
 void do_bgfg(char **argv);
 void waitfg(pid_t pid);
+pid_t Fork();
+void Sigfillset(sigset_t *mask);
+void Sigemptyset(sigset_t *mask);
+void Sigaddset(sigset_t *mask, int signo);
+void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask);
 
 void sigchld_handler(int sig);
 void sigtstp_handler(int sig);
@@ -164,22 +169,13 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline)
 {
-    sigset_t mask_sigchld, mask_all, prev_mask;
-    if (sigfillset(&mask_all) < 0) {
-        unix_error("Could not set all mask");
-        exit(0);
-    }
-    if (sigemptyset(&mask_sigchld) < 0) {
-        unix_error("Could not empty mask");
-        exit(0);
-    }
-    if (sigaddset(&mask_sigchld, SIGCHLD) < 0) {
-        unix_error("Could not mask for SIGCHLD");
-        exit(0);
-    }
     char **argv = (char **) malloc(sizeof(char *) * MAXARGS);
     int bg_flag;
     pid_t pid;
+    sigset_t mask_sigchld, mask_all, prev_mask;
+    Sigfillset(&mask_all);
+    Sigemptyset(&mask_sigchld);
+    Sigaddset(&mask_sigchld, SIGCHLD);
     bg_flag = parseline(cmdline, argv);
     if (!builtin_cmd(argv)) {
         if (sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask) < 0) {
@@ -194,21 +190,12 @@ void eval(char *cmdline)
         if (pid != 0) {
             // Run in the child process
             // reset all masks
-            if (sigprocmask(SIG_SETMASK, &prev_mask, NULL) < 0) {
-                unix_error("Could not reset mask");
-                exit(0);
-            }
+            Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             execve(argv[0], argv, environ);
         }
-        if (sigprocmask(SIG_BLOCK, &mask_all, NULL) < 0) {
-            unix_error("Could not block all signals");
-            exit(0);
-        }
+        Sigprocmask(SIG_BLOCK, &mask_all, NULL);
         addjob(jobs, pid, 2 - bg_flag, cmdline);
-        if (sigprocmask(SIG_SETMASK, &prev_mask, NULL) < 0) {
-            unix_error("Could not reset signals mask");
-            exit(0);
-        }
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
 }
 
@@ -547,4 +534,57 @@ void sigquit_handler(int sig)
 {
     printf("Terminating after receipt of SIGQUIT signal\n");
     exit(1);
+}
+
+/*
+ * Fork - wrapper for fork function
+ *    inclue error handling
+ */
+pid_t Fork() {
+    pid_t pid;
+    if ((pid = fork()) < 0) {
+        unix_error("Could not fork child process");
+        exit(1);
+    }
+    return pid;
+}
+
+/*
+ * Sigfillset - wrapper for the sigfillset function
+ */
+void Sigfillset(sigset_t *mask) {
+    if (sigfillset(mask) < 0) {
+        unix_error("Could not fill mask");
+        exit(1);
+    }
+}
+
+/*
+ * Sigemptyset - wrapper for the sigemptyset function
+ */
+void Sigemptyset(sigset_t *mask) {
+    if (sigemptyset(mask) < 0) {
+        unix_error("Could not empty mask");
+        exit(1);
+    }
+}
+
+/*
+ * Sigaddset - wrapper for the sigaddset function
+ */
+void Sigaddset(sigset_t *mask, int signo) {
+    if (sigaddset(mask, signo) < 0) {
+        unix_error("Could not add to set");
+        exit(1);
+    }
+}
+
+/*
+ * Sigprocmask - wrapper for the sigprocmask function
+ */
+void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask) {
+    if (sigprocmask(action, mask, prev_mask) < 0) {
+        unix_error("Could not perform action on mask");
+        exit(1);
+    }
 }
