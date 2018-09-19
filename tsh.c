@@ -188,7 +188,7 @@ void eval(char *cmdline)
             execve(argv[0], argv, environ);
         }
         Sigprocmask(SIG_BLOCK, &mask_all, NULL); // block all signals
-        addjob(jobs, pid, bg_flag + 1, cmdline);
+        addjob(jobs, pid, (bg_flag) ? BG : FG, cmdline);
         if (bg_flag) {
             char *buf = (char *) malloc(MAXLINE + 10);
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
@@ -312,13 +312,10 @@ void sigchld_handler(int sig)
     // reap all zombies
     pid_t pid;
     int status;
-    while ((pid = waitpid(-1, &status, 0)) > 0) {
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
         deletejob(jobs, pid);
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-    }
-    if (errno != ECHILD) {
-        unix_error("waitpid error");
     }
     errno = prev_error;
 }
