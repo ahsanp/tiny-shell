@@ -60,6 +60,12 @@ int builtin_cmd(char **argv);
 void do_bgfg(char **argv);
 void waitfg(pid_t pid);
 
+pid_t Fork();
+void Sigfillset(sigset_t *mask);
+void Sigemptyset(sigset_t *mask);
+void Sigaddset(sigset_t *mask, int signo);
+void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask);
+
 void sigchld_handler(int sig);
 void sigtstp_handler(int sig);
 void sigint_handler(int sig);
@@ -164,7 +170,39 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline)
 {
-    return;
+    char **argv = (char **) malloc(sizeof(char *) * MAXARGS);
+    int bg_flag;
+    pid_t pid;
+    sigset_t mask_sigchld, mask_all, prev_mask;
+    Sigfillset(&mask_all);
+    Sigemptyset(&mask_sigchld);
+    Sigaddset(&mask_sigchld, SIGCHLD);
+    bg_flag = parseline(cmdline, argv);
+    if (!builtin_cmd(argv)) {
+        Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask); // block SIGCHLD
+        if ((pid = Fork()) == 0) {
+            // Run in the child process
+            // reset all masks in child process
+            setpgid(0, 0);
+            Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+            execve(argv[0], argv, environ);
+        }
+        Sigprocmask(SIG_BLOCK, &mask_all, NULL); // block all signals
+        addjob(jobs, pid, (bg_flag) ? BG : FG, cmdline);
+        if (bg_flag) {
+            char *buf = (char *) malloc(MAXLINE + 10);
+            sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
+            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
+            if (written_bytes < 0) {
+                unix_error("Could not write to stdout");
+            }
+        }
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL); // reset all signals
+        if (!bg_flag) {
+            // wait for foreground process to complete
+            waitfg(pid);
+        }
+    }
 }
 
 /*
@@ -230,7 +268,13 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv)
 {
-    return 0;     /* not a builtin command */
+    if (!strcmp(argv[0], "quit")) {
+        exit(0);
+    } else if (!strcmp(argv[0], "jobs")) {
+        listjobs(jobs);
+        return 1;
+    }
+    return 0;
 }
 
 /*
@@ -246,7 +290,7 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    return;
+    while (pid2jid(pid) && pid == fgpid(jobs));
 }
 
 /*****************
@@ -262,7 +306,18 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig)
 {
-    return;
+    int prev_error = errno;
+    sigset_t mask_all, prev_mask;
+    Sigfillset(&mask_all);
+    // reap all zombies
+    pid_t pid;
+    int status;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+        deletejob(jobs, pid);
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    }
+    errno = prev_error;
 }
 
 /*
@@ -502,4 +557,52 @@ void sigquit_handler(int sig)
 {
     printf("Terminating after receipt of SIGQUIT signal\n");
     exit(1);
+}
+
+/*
+ * Fork - wrapper for fork function
+ *    inclue error handling
+ */
+pid_t Fork() {
+    pid_t pid;
+    if ((pid = fork()) < 0) {
+        unix_error("Could not fork child process");
+    }
+    return pid;
+}
+
+/*
+ * Sigfillset - wrapper for the sigfillset function
+ */
+void Sigfillset(sigset_t *mask) {
+    if (sigfillset(mask) < 0) {
+        unix_error("Could not fill mask");
+    }
+}
+
+/*
+ * Sigemptyset - wrapper for the sigemptyset function
+ */
+void Sigemptyset(sigset_t *mask) {
+    if (sigemptyset(mask) < 0) {
+        unix_error("Could not empty mask");
+    }
+}
+
+/*
+ * Sigaddset - wrapper for the sigaddset function
+ */
+void Sigaddset(sigset_t *mask, int signo) {
+    if (sigaddset(mask, signo) < 0) {
+        unix_error("Could not add to set");
+    }
+}
+
+/*
+ * Sigprocmask - wrapper for the sigprocmask function
+ */
+void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask) {
+    if (sigprocmask(action, mask, prev_mask) < 0) {
+        unix_error("Could not perform action on mask");
+    }
 }
