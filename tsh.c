@@ -306,7 +306,10 @@ void do_bgfg(char **argv, pid_t *pid)
  */
 void waitfg(pid_t pid)
 {
-    while (pid2jid(pid) && pid == fgpid(jobs));
+    sigset_t mask_none;
+    Sigemptyset(&mask_none);
+    while (pid2jid(pid) && pid == fgpid(jobs))
+        sigsuspend(&mask_none);
 }
 
 /*****************
