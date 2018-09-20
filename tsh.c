@@ -190,7 +190,7 @@ void eval(char *cmdline)
         Sigprocmask(SIG_BLOCK, &mask_all, NULL); // block all signals
         addjob(jobs, pid, (bg_flag) ? BG : FG, cmdline);
         if (bg_flag) {
-            char *buf = (char *) malloc(MAXLINE + 10);
+            char buf[MAXLINE + 10];
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
             ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
             if (written_bytes < 0) {
@@ -306,18 +306,29 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig)
 {
-    int prev_error = errno;
+    int prev_error, jid, status;
+    pid_t pid;
+    prev_error = errno;
     sigset_t mask_all, prev_mask;
     Sigfillset(&mask_all);
     // reap all zombies
-    pid_t pid;
-    int status;
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        jid = pid2jid(pid);
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
         deletejob(jobs, pid);
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        if (WIFSIGNALED(status)) {
+            // write message if terminated by an uncaught signal
+            char buf[1024];
+            sprintf(buf, "Job [%d] (%d) terminated by signal %d\n",
+                    jid, pid, WTERMSIG(status));
+            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
+            if (written_bytes < 0) {
+                unix_error("Could not make system call write");
+            }
+        }
     }
-    errno = prev_error;
+    errno = prev_error; // restore errno
 }
 
 /*
@@ -327,7 +338,16 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig)
 {
-    return;
+    sigset_t mask_all, prev_mask;
+    Sigfillset(&mask_all);
+    pid_t pid;
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+    if ((pid = fgpid(jobs)) != 0) {
+        if (kill(pid, SIGINT) < 0) {
+            unix_error("Problem sending signal");
+        }
+    }
+    Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
 }
 
 /*
