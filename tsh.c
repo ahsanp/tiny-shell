@@ -365,6 +365,7 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig)
 {
+    int prev_err = errno;
     sigset_t mask_all, prev_mask;
     Sigfillset(&mask_all);
     pid_t pid;
@@ -375,6 +376,7 @@ void sigint_handler(int sig)
         }
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    errno = prev_err;
 }
 
 /*
@@ -384,6 +386,7 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig)
 {
+    int prev_err = errno;
     sigset_t mask_all, prev_mask;
     Sigfillset(&mask_all);
     pid_t pid;
@@ -396,7 +399,7 @@ void sigtstp_handler(int sig)
         job -> state = ST;
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-
+    errno = prev_err;
 }
 
 /*********************
