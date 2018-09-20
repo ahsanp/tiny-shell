@@ -343,7 +343,7 @@ void sigchld_handler(int sig)
         } else if (WIFSTOPPED(status)) {
             // write message if the process was stopped by a signal
             sprintf(buf, "Job [%d] (%d) stopped by signal %d\n",
-                    jid, pid, WTERMSIG(status));
+                    jid, pid, WSTOPSIG(status));
             ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
             if (written_bytes < 0) {
                 unix_error("Could not make system call write");
