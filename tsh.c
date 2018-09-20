@@ -288,7 +288,7 @@ void do_bgfg(char **argv, pid_t *pid)
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
     struct job_t *job = getjobjid(jobs, jid);
     *pid = job -> pid;
-    if (kill(*pid, SIGCONT) < 0) {
+    if (kill(-1 * (*pid), SIGCONT) < 0) {
         unix_error("Could not send continue signal process");
     }
     if (!strcmp(argv[0], "bg")) {
