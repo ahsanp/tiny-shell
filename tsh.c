@@ -190,7 +190,7 @@ void eval(char *cmdline)
         Sigprocmask(SIG_BLOCK, &mask_all, NULL); // block all signals
         addjob(jobs, pid, (bg_flag) ? BG : FG, cmdline);
         if (bg_flag) {
-            char *buf = (char *) malloc(MAXLINE + 10);
+            char buf[MAXLINE + 10];
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
             ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
             if (written_bytes < 0) {
@@ -327,7 +327,20 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig)
 {
-    return;
+    sigset_t mask_all, prev_mask;
+    Sigfillset(&mask_all);
+    pid_t pid;
+    int jid;
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+    if ((pid = fgpid(jobs)) != 0) {
+        if (kill(pid, SIGINT) < 0) {
+            unix_error("Problem sending signal");
+        }
+        jid = pid2jid(pid);
+    }
+    Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+
+
 }
 
 /*
