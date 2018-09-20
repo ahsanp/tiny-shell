@@ -325,24 +325,34 @@ void sigchld_handler(int sig)
 {
     int prev_error, jid, status;
     pid_t pid;
+    char buf[1024];
     prev_error = errno;
     sigset_t mask_all, prev_mask;
     Sigfillset(&mask_all);
     // reap all zombies
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
         jid = pid2jid(pid);
-        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
-        deletejob(jobs, pid);
-        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         if (WIFSIGNALED(status)) {
             // write message if terminated by an uncaught signal
-            char buf[1024];
             sprintf(buf, "Job [%d] (%d) terminated by signal %d\n",
                     jid, pid, WTERMSIG(status));
             ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
             if (written_bytes < 0) {
                 unix_error("Could not make system call write");
             }
+        } else if (WIFSTOPPED(status)) {
+            // write message if the process was stopped by a signal
+            sprintf(buf, "Job [%d] (%d) stopped by signal %d\n",
+                    jid, pid, WTERMSIG(status));
+            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
+            if (written_bytes < 0) {
+                unix_error("Could not make system call write");
+            }
+        } else {
+            // delete process from the job list
+            Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+            deletejob(jobs, pid);
+            Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         }
     }
     errno = prev_error; // restore errno
