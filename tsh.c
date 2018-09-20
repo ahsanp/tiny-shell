@@ -273,6 +273,9 @@ int builtin_cmd(char **argv)
     } else if (!strcmp(argv[0], "jobs")) {
         listjobs(jobs);
         return 1;
+    } else if (!strcmp(argv[0], "fg") || !strcmp(argv[0], "bg")) {
+        do_bgfg(argv);
+        return 1;
     }
     return 0;
 }
@@ -282,7 +285,22 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv)
 {
-    return;
+    int jid;
+    pid_t pid;
+    sigset_t mask_all, prev_mask;
+    Sigfillset(&mask_all);
+    if (!strcmp(argv[0], "bg")) {
+        sscanf(argv[1], "%%%d", &jid);
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+        struct job_t *job = getjobjid(jobs, jid);
+        pid = job -> pid;
+        printf("%d %d", jid, pid);
+        if (kill(pid, SIGCONT) < 0) {
+            unix_error("Could not send continue signal to error");
+        }
+        job -> state = BG;
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    }
 }
 
 /*
