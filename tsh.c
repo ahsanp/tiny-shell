@@ -56,8 +56,8 @@ struct job_t jobs[MAXJOBS]; /* The job list */
 
 /* Here are the functions that you will implement */
 void eval(char *cmdline);
-int builtin_cmd(char **argv);
-void do_bgfg(char **argv);
+int builtin_cmd(char **argv, pid_t *pid);
+void do_bgfg(char **argv, pid_t *pid);
 void waitfg(pid_t pid);
 
 pid_t Fork();
@@ -179,7 +179,7 @@ void eval(char *cmdline)
     Sigemptyset(&mask_sigchld);
     Sigaddset(&mask_sigchld, SIGCHLD);
     bg_flag = parseline(cmdline, argv);
-    if (!builtin_cmd(argv)) {
+    if (!builtin_cmd(argv, &pid)) {
         Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask); // block SIGCHLD
         if ((pid = Fork()) == 0) {
             // Run in the child process
@@ -196,11 +196,8 @@ void eval(char *cmdline)
             Write(STDOUT_FILENO, buf, strlen(buf));
         }
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL); // reset all signals
-        if (!bg_flag) {
-            // wait for foreground process to complete
-            waitfg(pid);
-        }
     }
+    waitfg(pid); // wait if a process is in foreground
 }
 
 /*
@@ -264,7 +261,7 @@ int parseline(const char *cmdline, char **argv)
  * builtin_cmd - If the user has typed a built-in command then execute
  *    it immediately.
  */
-int builtin_cmd(char **argv)
+int builtin_cmd(char **argv, pid_t *pid)
 {
     if (!strcmp(argv[0], "quit")) {
         exit(0);
@@ -272,7 +269,7 @@ int builtin_cmd(char **argv)
         listjobs(jobs);
         return 1;
     } else if (!strcmp(argv[0], "fg") || !strcmp(argv[0], "bg")) {
-        do_bgfg(argv);
+        do_bgfg(argv, pid);
         return 1;
     }
     return 0;
@@ -281,29 +278,27 @@ int builtin_cmd(char **argv)
 /*
  * do_bgfg - Execute the builtin bg and fg commands
  */
-void do_bgfg(char **argv)
+void do_bgfg(char **argv, pid_t *pid)
 {
     char buf[MAXLINE + 20];
     int jid;
-    pid_t pid;
     sigset_t mask_all, prev_mask;
     sscanf(argv[1], "%%%d", &jid);
     Sigfillset(&mask_all);
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
     struct job_t *job = getjobjid(jobs, jid);
-    pid = job -> pid;
-    if (kill(pid, SIGCONT) < 0) {
+    *pid = job -> pid;
+    if (kill(*pid, SIGCONT) < 0) {
         unix_error("Could not send continue signal process");
     }
     if (!strcmp(argv[0], "bg")) {
         job -> state = BG;
-        sprintf(buf, "[%d] (%d) %s", jid, pid, job -> cmdline);
+        sprintf(buf, "[%d] (%d) %s", jid, *pid, job -> cmdline);
         Write(STDOUT_FILENO, buf, strlen(buf));
     } else {
         job -> state = FG;
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-    waitfg(pid);
 }
 
 /*
