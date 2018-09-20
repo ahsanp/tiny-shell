@@ -331,6 +331,7 @@ void sigint_handler(int sig)
     Sigfillset(&mask_all);
     pid_t pid;
     int jid;
+    char buf[1024];
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
     if ((pid = fgpid(jobs)) != 0) {
         if (kill(pid, SIGINT) < 0) {
@@ -339,8 +340,11 @@ void sigint_handler(int sig)
         jid = pid2jid(pid);
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-
-
+    sprintf(buf, "Job [%d] (%d) terminated by signal %d\n", jid, pid, SIGINT);
+    ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
+    if (written_bytes < 0) {
+        unix_error("Could not make system call write");
+    }
 }
 
 /*
