@@ -170,7 +170,7 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline)
 {
-    char **argv = (char **) malloc(sizeof(char *) * MAXARGS);
+    char *argv[MAXARGS];
     int bg_flag;
     pid_t pid;
     sigset_t mask_sigchld, mask_all, prev_mask;
