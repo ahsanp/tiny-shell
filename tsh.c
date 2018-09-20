@@ -65,6 +65,7 @@ void Sigfillset(sigset_t *mask);
 void Sigemptyset(sigset_t *mask);
 void Sigaddset(sigset_t *mask, int signo);
 void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask);
+void Write(int fd, const void *buf, size_t count);
 
 void sigchld_handler(int sig);
 void sigtstp_handler(int sig);
@@ -192,10 +193,7 @@ void eval(char *cmdline)
         if (bg_flag) {
             char buf[MAXLINE + 10];
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
-            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
-            if (written_bytes < 0) {
-                unix_error("Could not write to stdout");
-            }
+            Write(STDOUT_FILENO, buf, strlen(buf));
         }
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL); // reset all signals
         if (!bg_flag) {
@@ -302,10 +300,7 @@ void do_bgfg(char **argv)
         sprintf(buf, "[%d] (%d) %s", jid, pid, job -> cmdline);
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
-    ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
-    if (written_bytes < 0) {
-        unix_error("Error making write system call");
-    }
+    Write(STDOUT_FILENO, buf, strlen(buf));
 }
 
 /*
@@ -342,18 +337,12 @@ void sigchld_handler(int sig)
             // write message if terminated by an uncaught signal
             sprintf(buf, "Job [%d] (%d) terminated by signal %d\n",
                     jid, pid, WTERMSIG(status));
-            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
-            if (written_bytes < 0) {
-                unix_error("Could not make system call write");
-            }
+            Write(STDOUT_FILENO, buf, strlen(buf));
         } else if (WIFSTOPPED(status)) {
             // write message if the process was stopped by a signal
             sprintf(buf, "Job [%d] (%d) stopped by signal %d\n",
                     jid, pid, WSTOPSIG(status));
-            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
-            if (written_bytes < 0) {
-                unix_error("Could not make system call write");
-            }
+            Write(STDOUT_FILENO, buf, strlen(buf));
         }
         if (WIFEXITED(status) || WIFSIGNALED(status)) {
             // delete process from the job list
@@ -674,5 +663,14 @@ void Sigaddset(sigset_t *mask, int signo) {
 void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask) {
     if (sigprocmask(action, mask, prev_mask) < 0) {
         unix_error("Could not perform action on mask");
+    }
+}
+
+/*
+ * Write - error handling wrapper for write system call
+ */
+void Write(int fd, const void *buf, size_t count) {
+    if (write(fd, buf, count) < 0) {
+        unix_error("Error making write system call");
     }
 }
