@@ -171,6 +171,7 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline)
 {
+    char buf[MAXLINE + 10];
     char *argv[MAXARGS];
     int bg_flag;
     pid_t pid;
@@ -187,11 +188,15 @@ void eval(char *cmdline)
             setpgid(0, 0);
             Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
             execve(argv[0], argv, environ);
+            // this part will only run if the execve was not successful
+            cmdline[strlen(cmdline) - 1] = '\0'; // get rid of new line
+            sprintf(buf, "%s: Command not found\n", cmdline);
+            Write(STDOUT_FILENO, buf, strlen(buf));
+            exit(1);
         }
         Sigprocmask(SIG_BLOCK, &mask_all, NULL); // block all signals
         addjob(jobs, pid, (bg_flag) ? BG : FG, cmdline);
         if (bg_flag) {
-            char buf[MAXLINE + 10];
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
             Write(STDOUT_FILENO, buf, strlen(buf));
         }
