@@ -366,7 +366,7 @@ void sigint_handler(int sig)
     pid_t pid;
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
     if ((pid = fgpid(jobs)) != 0) {
-        if (kill(pid, SIGINT) < 0) {
+        if (kill(-pid, SIGINT) < 0) {
             unix_error("Problem sending signal");
         }
     }
