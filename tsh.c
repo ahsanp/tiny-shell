@@ -289,28 +289,21 @@ void do_bgfg(char **argv)
     sigset_t mask_all, prev_mask;
     sscanf(argv[1], "%%%d", &jid);
     Sigfillset(&mask_all);
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+    struct job_t *job = getjobjid(jobs, jid);
+    pid = job -> pid;
+    if (kill(pid, SIGCONT) < 0) {
+        unix_error("Could not send continue signal process");
+    }
     if (!strcmp(argv[0], "bg")) {
-        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
-        struct job_t *job = getjobjid(jobs, jid);
-        pid = job -> pid;
-        if (kill(pid, SIGCONT) < 0) {
-            unix_error("Could not send continue signal process");
-        }
         job -> state = BG;
         sprintf(buf, "[%d] (%d) %s", jid, pid, job -> cmdline);
-        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         Write(STDOUT_FILENO, buf, strlen(buf));
     } else {
-        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
-        struct job_t *job = getjobjid(jobs, jid);
-        pid = job -> pid;
-        if (kill(pid, SIGCONT) < 0) {
-            unix_error("Could not send continue signal to process");
-        }
         job -> state = FG;
-        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-        waitfg(pid);
     }
+    Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    waitfg(pid);
 }
 
 /*
