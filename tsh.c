@@ -348,8 +348,10 @@ void sigchld_handler(int sig)
             if (written_bytes < 0) {
                 unix_error("Could not make system call write");
             }
-        } else {
+        }
+        if (WIFEXITED(status) || WIFSIGNALED(status)) {
             // delete process from the job list
+            // if terminated normally or by SIGINT
             Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
             deletejob(jobs, pid);
             Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
