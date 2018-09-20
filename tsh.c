@@ -285,6 +285,7 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv)
 {
+    char buf[MAXLINE + 20];
     int jid;
     pid_t pid;
     sigset_t mask_all, prev_mask;
@@ -298,7 +299,12 @@ void do_bgfg(char **argv)
             unix_error("Could not send continue signal to error");
         }
         job -> state = BG;
+        sprintf(buf, "[%d] (%d) %s", jid, pid, job -> cmdline);
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    }
+    ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
+    if (written_bytes < 0) {
+        unix_error("Error making write system call");
     }
 }
 
