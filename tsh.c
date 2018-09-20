@@ -337,7 +337,19 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig)
 {
-    return;
+    sigset_t mask_all, prev_mask;
+    Sigfillset(&mask_all);
+    pid_t pid;
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+    if ((pid = fgpid(jobs)) != 0) {
+        if (kill(pid, SIGTSTP) < 0) {
+            unix_error("Problem sending stop signal");
+        }
+        struct job_t *job = getjobpid(jobs, pid);
+        job -> state = ST;
+    }
+    Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+
 }
 
 /*********************
