@@ -294,7 +294,6 @@ void do_bgfg(char **argv)
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
         struct job_t *job = getjobjid(jobs, jid);
         pid = job -> pid;
-        printf("%d %d", jid, pid);
         if (kill(pid, SIGCONT) < 0) {
             unix_error("Could not send continue signal to error");
         }
