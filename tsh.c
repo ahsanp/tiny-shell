@@ -288,9 +288,9 @@ void do_bgfg(char **argv)
     int jid;
     pid_t pid;
     sigset_t mask_all, prev_mask;
+    sscanf(argv[1], "%%%d", &jid);
     Sigfillset(&mask_all);
     if (!strcmp(argv[0], "bg")) {
-        sscanf(argv[1], "%%%d", &jid);
         Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
         struct job_t *job = getjobjid(jobs, jid);
         pid = job -> pid;
