@@ -56,8 +56,8 @@ struct job_t jobs[MAXJOBS]; /* The job list */
 
 /* Here are the functions that you will implement */
 void eval(char *cmdline);
-int builtin_cmd(char **argv);
-void do_bgfg(char **argv);
+int builtin_cmd(char **argv, pid_t *pid);
+void do_bgfg(char **argv, pid_t *pid);
 void waitfg(pid_t pid);
 
 pid_t Fork();
@@ -65,6 +65,7 @@ void Sigfillset(sigset_t *mask);
 void Sigemptyset(sigset_t *mask);
 void Sigaddset(sigset_t *mask, int signo);
 void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask);
+void Write(int fd, const void *buf, size_t count);
 
 void sigchld_handler(int sig);
 void sigtstp_handler(int sig);
@@ -170,7 +171,7 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline)
 {
-    char **argv = (char **) malloc(sizeof(char *) * MAXARGS);
+    char *argv[MAXARGS];
     int bg_flag;
     pid_t pid;
     sigset_t mask_sigchld, mask_all, prev_mask;
@@ -178,7 +179,7 @@ void eval(char *cmdline)
     Sigemptyset(&mask_sigchld);
     Sigaddset(&mask_sigchld, SIGCHLD);
     bg_flag = parseline(cmdline, argv);
-    if (!builtin_cmd(argv)) {
+    if (!builtin_cmd(argv, &pid)) {
         Sigprocmask(SIG_BLOCK, &mask_sigchld, &prev_mask); // block SIGCHLD
         if ((pid = Fork()) == 0) {
             // Run in the child process
@@ -192,17 +193,11 @@ void eval(char *cmdline)
         if (bg_flag) {
             char buf[MAXLINE + 10];
             sprintf(buf, "[%d] (%d) %s", pid2jid(pid), pid, cmdline);
-            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
-            if (written_bytes < 0) {
-                unix_error("Could not write to stdout");
-            }
+            Write(STDOUT_FILENO, buf, strlen(buf));
         }
         Sigprocmask(SIG_SETMASK, &prev_mask, NULL); // reset all signals
-        if (!bg_flag) {
-            // wait for foreground process to complete
-            waitfg(pid);
-        }
     }
+    waitfg(pid); // wait if a process is in foreground
 }
 
 /*
@@ -266,12 +261,15 @@ int parseline(const char *cmdline, char **argv)
  * builtin_cmd - If the user has typed a built-in command then execute
  *    it immediately.
  */
-int builtin_cmd(char **argv)
+int builtin_cmd(char **argv, pid_t *pid)
 {
     if (!strcmp(argv[0], "quit")) {
         exit(0);
     } else if (!strcmp(argv[0], "jobs")) {
         listjobs(jobs);
+        return 1;
+    } else if (!strcmp(argv[0], "fg") || !strcmp(argv[0], "bg")) {
+        do_bgfg(argv, pid);
         return 1;
     }
     return 0;
@@ -280,9 +278,27 @@ int builtin_cmd(char **argv)
 /*
  * do_bgfg - Execute the builtin bg and fg commands
  */
-void do_bgfg(char **argv)
+void do_bgfg(char **argv, pid_t *pid)
 {
-    return;
+    char buf[MAXLINE + 20];
+    int jid;
+    sigset_t mask_all, prev_mask;
+    sscanf(argv[1], "%%%d", &jid);
+    Sigfillset(&mask_all);
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+    struct job_t *job = getjobjid(jobs, jid);
+    *pid = job -> pid;
+    if (kill(*pid, SIGCONT) < 0) {
+        unix_error("Could not send continue signal process");
+    }
+    if (!strcmp(argv[0], "bg")) {
+        job -> state = BG;
+        sprintf(buf, "[%d] (%d) %s", jid, *pid, job -> cmdline);
+        Write(STDOUT_FILENO, buf, strlen(buf));
+    } else {
+        job -> state = FG;
+    }
+    Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
 }
 
 /*
@@ -290,7 +306,10 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    while (pid2jid(pid) && pid == fgpid(jobs));
+    sigset_t mask_none;
+    Sigemptyset(&mask_none);
+    while (pid2jid(pid) && pid == fgpid(jobs))
+        sigsuspend(&mask_none);
 }
 
 /*****************
@@ -308,24 +327,30 @@ void sigchld_handler(int sig)
 {
     int prev_error, jid, status;
     pid_t pid;
+    char buf[1024];
     prev_error = errno;
     sigset_t mask_all, prev_mask;
     Sigfillset(&mask_all);
     // reap all zombies
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
         jid = pid2jid(pid);
-        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
-        deletejob(jobs, pid);
-        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         if (WIFSIGNALED(status)) {
             // write message if terminated by an uncaught signal
-            char buf[1024];
             sprintf(buf, "Job [%d] (%d) terminated by signal %d\n",
                     jid, pid, WTERMSIG(status));
-            ssize_t written_bytes = write(STDOUT_FILENO, buf, strlen(buf));
-            if (written_bytes < 0) {
-                unix_error("Could not make system call write");
-            }
+            Write(STDOUT_FILENO, buf, strlen(buf));
+        } else if (WIFSTOPPED(status)) {
+            // write message if the process was stopped by a signal
+            sprintf(buf, "Job [%d] (%d) stopped by signal %d\n",
+                    jid, pid, WSTOPSIG(status));
+            Write(STDOUT_FILENO, buf, strlen(buf));
+        }
+        if (WIFEXITED(status) || WIFSIGNALED(status)) {
+            // delete process from the job list
+            // if terminated normally or by SIGINT
+            Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+            deletejob(jobs, pid);
+            Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
         }
     }
     errno = prev_error; // restore errno
@@ -338,16 +363,18 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig)
 {
+    int prev_err = errno;
     sigset_t mask_all, prev_mask;
     Sigfillset(&mask_all);
     pid_t pid;
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
     if ((pid = fgpid(jobs)) != 0) {
-        if (kill(pid, SIGINT) < 0) {
+        if (kill(-pid, SIGINT) < 0) {
             unix_error("Problem sending signal");
         }
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    errno = prev_err;
 }
 
 /*
@@ -357,6 +384,7 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig)
 {
+    int prev_err = errno;
     sigset_t mask_all, prev_mask;
     Sigfillset(&mask_all);
     pid_t pid;
@@ -369,7 +397,7 @@ void sigtstp_handler(int sig)
         job -> state = ST;
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
-
+    errno = prev_err;
 }
 
 /*********************
@@ -636,5 +664,14 @@ void Sigaddset(sigset_t *mask, int signo) {
 void Sigprocmask(int action, sigset_t *mask, sigset_t *prev_mask) {
     if (sigprocmask(action, mask, prev_mask) < 0) {
         unix_error("Could not perform action on mask");
+    }
+}
+
+/*
+ * Write - error handling wrapper for write system call
+ */
+void Write(int fd, const void *buf, size_t count) {
+    if (write(fd, buf, count) < 0) {
+        unix_error("Error making write system call");
     }
 }
