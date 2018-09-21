@@ -274,7 +274,14 @@ int builtin_cmd(char **argv, pid_t *pid)
         listjobs(jobs);
         return 1;
     } else if (!strcmp(argv[0], "fg") || !strcmp(argv[0], "bg")) {
-        do_bgfg(argv, pid);
+        if (argv[1] == NULL) {
+            char buf[MAXLINE];
+            sprintf(buf, "%s command requires PID or %%jobid argument\n",
+                    argv[0]);
+            Write(STDOUT_FILENO, buf, strlen(buf));
+        }  else {
+            do_bgfg(argv, pid);
+        }
         return 1;
     }
     return 0;
