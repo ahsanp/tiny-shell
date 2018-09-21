@@ -58,6 +58,7 @@ struct job_t jobs[MAXJOBS]; /* The job list */
 void eval(char *cmdline);
 int builtin_cmd(char **argv, pid_t *pid);
 void do_bgfg(char **argv, pid_t *pid);
+int arg2jid(char **argv);
 void waitfg(pid_t pid);
 
 pid_t Fork();
@@ -295,7 +296,9 @@ void do_bgfg(char **argv, pid_t *pid)
     char buf[MAXLINE + 20];
     int jid;
     sigset_t mask_all, prev_mask;
-    sscanf(argv[1], "%%%d", &jid);
+    if (!(jid = arg2jid(argv))) {
+        return;
+    }
     Sigfillset(&mask_all);
     Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
     struct job_t *job = getjobjid(jobs, jid);
@@ -311,6 +314,58 @@ void do_bgfg(char **argv, pid_t *pid)
         job -> state = FG;
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+}
+
+/*
+ * arg2jid - extract jid from the arguments and print error if invalid argument
+ */
+int arg2jid(char **argv) {
+    char buf[MAXLINE];
+    pid_t pid = 0;
+    int jid = 0;
+    sigset_t mask_all, prev_mask;
+    Sigaddset(&mask_all, SIGCHLD);
+    // check if the argument contains any invalid characters
+    if (argv[1][0] != '%' && !(argv[1][0] >= '0' && argv[1][0] <= '9')) {
+        sprintf(buf, "%s command requires PID or %%jobid\n", argv[0]);
+        Write(STDOUT_FILENO, buf, strlen(buf));
+        return jid;
+    }
+    // check if all characters after the first one are digits
+    char *temp = argv[1] + 1;
+    while (*temp != '\0') {
+        if (*temp > '9' || *temp < '0') {
+            if (argv[1][0] != '%') {
+                sprintf(buf, "%%%s: No such job\n", argv[1]);
+            } else {
+                sprintf(buf, "(%s): No such process\n", argv[1]);
+            }
+            Write(STDOUT_FILENO, buf, strlen(buf));
+            return jid;
+        }
+        temp++;
+    }
+    if (argv[1][0] == '%') {
+        sscanf(argv[1], "%%%d", &jid);
+    } else {
+        sscanf(argv[1], "%d", &pid);
+    }
+    Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
+    if (!jid) {
+        jid = pid2jid(pid);
+        if (!getjobjid(jobs, jid)) {
+            sprintf(buf, "(%s): No such process\n", argv[1]);
+            Write(STDOUT_FILENO, buf, strlen(buf));
+        }
+    } else {
+        if (!getjobjid(jobs, jid)) {
+            jid = 0;
+            sprintf(buf, "%%%s: No such job\n", argv[1]);
+            Write(STDOUT_FILENO, buf, strlen(buf));
+        }
+    }
+    Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+    return jid;
 }
 
 /*
