@@ -412,13 +412,16 @@ void sigchld_handler(int sig)
                     jid, pid, WSTOPSIG(status));
             Write(STDOUT_FILENO, buf, strlen(buf));
         }
+        Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
         if (WIFEXITED(status) || WIFSIGNALED(status)) {
             // delete process from the job list
             // if terminated normally or by SIGINT
-            Sigprocmask(SIG_BLOCK, &mask_all, &prev_mask);
             deletejob(jobs, pid);
-            Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
+        } else {
+            struct job_t *job = getjobpid(jobs, pid);
+            job -> state = ST;
         }
+        Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     }
     errno = prev_error; // restore errno
 }
@@ -460,8 +463,6 @@ void sigtstp_handler(int sig)
         if (kill(-pid, SIGTSTP) < 0) {
             unix_error("Problem sending stop signal");
         }
-        struct job_t *job = getjobpid(jobs, pid);
-        job -> state = ST;
     }
     Sigprocmask(SIG_SETMASK, &prev_mask, NULL);
     errno = prev_err;
